@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en-US">
+
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width" />
+<title>Parkchamp Code Challenge</title>
+</head>
+
+<body>
+<h1>Parkchamp Code Challenge</h1>
+<h2>Solution by Victor Bubis</h2>
+
+<p>Submit a text input to see how many database entries are anagrams of it.</p>
+
+<script type="module">
+//We have to put our js module here to avoid a CORS issue when running this directly from file (as per the specification).
+//This is because we are required to identify this script as a module in order to import firebase from their domain,
+//and this makes CORS otherwise unavoidable.
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js"
+import { getDatabase, ref, onValue} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-database.js"
+
+const firebaseConfig = {
+    apiKey: "AIzaSyASGXadyGKNyduFR-AdYnbxWovMtN2nF3c",
+    authDomain: "intro-project-3fa07.firebaseapp.com",
+    projectId: "intro-project-3fa07",
+    storageBucket: "intro-project-3fa07.firebasestorage.app",
+    messagingSenderId: "831804590363",
+    appId: "1:831804590363:web:28fd1a85b7dd57d7cb2bbe",
+    databaseURL: "https://intro-project-3fa07-default-rtdb.firebaseio.com/"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+
+// Initialize Realtime Database and get a reference to the service
+const database = getDatabase(app);
+
+const ASCII_SIZE = 128; //Size of the non-extended ASCII table. Can be changed to cover an arbitrary upper range of UTF
+
+function compare_counts(count1, count2, len) {
+    //This function assumes that the two strings share an equal length, len (i.e. this condition has already been checked)
+    //We track the remaining length so that we don't always have to check the entire table, especially if it has been extended
+    //We also assume that all valid counts have size according to ASCII_SIZE, and invalid ones are structurally null
+    if (count1 === null || count2 === null) {
+        return false;
+    }
+    for (let i = 0; i < ASCII_SIZE && len > 0; i++) {
+        if (count1[i] != count2[i]) {
+            return false; //Any mismatch means no further comparison is necessary
+        }
+        len -= count1[i];
+    }
+    return true;
+}
+
+function convert_to_count(str) {
+    let count = new Array(ASCII_SIZE).fill(0);
+
+    for (let i = 0; i < str.length; i++) {
+        let tmp = str.charCodeAt(i);
+        if (tmp < ASCII_SIZE) {
+            count[tmp]++;
+        }
+        else {
+            //The string is invalid, and shouldn't match anything. We set it to null, and check for null when comparing counts
+            console.warn(`String ${str} contains invalid characters and cannot match anything.`);
+            //return new Array(ASCII_SIZE).fill(null);
+            return null
+        }
+    }
+    return count;
+}
+
+function check_anagram_list(str_in, str_list) {
+    let ref_count = convert_to_count(str_in); //We only need to convert this once
+    let match_tally = 0;
+    if (ref_count === null) {
+        return 0; //Invalid strings cannot match anything
+    }
+    for (let i = 0; i < str_list.length; i++) {
+        if (str_list[i].length == str_in.length) {
+            if (compare_counts(convert_to_count(str_list[i]), ref_count, str_in.length)) { //Nested to avoid unnecessary conversions
+                match_tally++;
+            }
+        }
+    }
+    return match_tally;
+}
+
+//Class so that we don't have to use a global variable to save data updates
+//Class scope is restricted only to methods that directly reference the local copy of the data
+class localDB {
+    constructor() {
+        this.data = null; //Our functions will check for null and assume the database could not be accessed if null
+    }
+    update_data(snapshot_val) { //Not actually a setter, to avoid recursion
+        this.data = snapshot_val; //Assumes only .val() is being passed, i.e. that data is already in correct format
+    }
+    check_anagram_db(str_in) {
+        //Filters are shallow copies, so we create a deepcopy just to avoid any possible conflicting updates while executing
+        let str_list = JSON.parse(JSON.stringify( //structuredCopy is up to browser support, so we use stringify+parse
+            this.data.filter((entry) => (typeof entry === 'string' || entry instanceof String))
+        ));
+        if (str_list === null) {
+            console.warn("No data could be retrieved from firebase.")
+            return 0;
+        }
+        else {
+            return check_anagram_list(str_in, str_list);
+        }
+    }
+}
+
+const local_db = new localDB();
+
+function get_anagram_count() { //Excluded from class scope so that doc interface is top level
+	var text_in = document.getElementById("text_field").value;
+	var text_out = local_db.check_anagram_db(text_in);
+	document.getElementById("text_output").innerHTML = '(' + text_out + ' anagrams found)';
+	return false;
+}
+
+//Input handling for text
+document.getElementById("update_btn").addEventListener("click", get_anagram_count);
+document.getElementById("text_field").addEventListener("change", get_anagram_count);
+
+//Getting data from firebase using listeners
+const dbRef = ref(database, `test`)
+onValue(dbRef, (snapshot) => { //Listener is kept in global scope for async purposes, and therefore is not method of localDB
+	local_db.update_data(snapshot.val());
+});
+</script>
+
+<label for="text_field">Input:</label>
+<input type="text" id="text_field" name="text_field"><br><br>
+<input type="button" id="update_btn" value="Update">
+
+<p id="text_output"></p>
+
+</body>
+</html>
